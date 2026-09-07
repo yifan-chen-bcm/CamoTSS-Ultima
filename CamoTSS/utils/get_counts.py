@@ -299,7 +299,7 @@ class get_TSS_count():
 
         ### imap preserves input order exactly like map_async().get(), but yields
         ### results as they finish so progress is observable.
-        _log("phase 3/6  hierarchical clustering of 5' ends, %d genes on %d workers"
+        _log("phase 3/6  hierarchical clustering of 3' ends (reads are reverse complement), %d genes on %d workers"
              % (len(dictcontentls), self.nproc))
         nclu = len(dictcontentls)
         cs = max(1, -(-nclu // (4 * self.nproc)))     # same formula map_async uses
