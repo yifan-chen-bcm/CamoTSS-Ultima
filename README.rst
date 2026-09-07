@@ -1,136 +1,137 @@
-============================================================
-CamoTSS for alternative TSS analysis in single cells
-============================================================
-|pypi| 
+=========================================================================
+CamoTSS-Ultima: alternative TSS analysis for Ultima UG100 5' scRNA-seq
+=========================================================================
 
-.. |pypi| image:: https://badge.fury.io/py/CamoTSS.svg
-       :target: https://pypi.org/project/CamoTSS/
+A fork of CamoTSS_ that makes the transcript-cluster (TSS) pipeline run on
+**single-end, antisense, TSO-trimmed cDNA reads** -- the read geometry produced
+by a 10x Genomics 5' universal library sequenced on an Ultima UG 100 and
+converted to a synthetic R2 BAM for Cell Ranger.
 
-.. image:: https://zenodo.org/badge/497821671.svg
-      :target: https://zenodo.org/badge/latestdoi/497821671
 
-Fork
-============
-Update the package so it works with Ultima R2 reads
-Most of the changes are made in get_counts.py
-Yifan Chen 9-6-2026
-yifan.chen@bcm.edu
 
-Note
-============
-Hi there, my github account did not notify me when there are issue. 
-So if you are in a hurry, you can email me. ruiyan@connect.hku.hk.
-I check email every day.  
+.. _CamoTSS: https://github.com/StatBiomed/CamoTSS
 
+:Upstream: CamoTSS 0.1.7 (StatBiomed/CamoTSS)
+:This fork: 0.1.7+ultima.1
+:Maintainer: Yifan Chen <yifan.chen@bcm.edu>
+:License: Apache 2.0 (inherited from upstream)
+
+Please report problems **with this fork** on this repository. Issues with
+CamoTSS itself belong upstream_.
+
+.. _upstream: https://github.com/StatBiomed/CamoTSS/issues
+
+
+Scope
+=====
+
+- ``--mode TC`` is the supported and tested path.
+- ``--mode CTSS`` and ``--mode TC+CTSS`` are **not usable on this data** and are
+  left exactly as upstream. The CTSS window scan requires the 14-16 bp TSO soft
+  clip to identify unencoded G; those reads carry no TSO, so every cluster
+  returns an empty window list.
+- Tested on human GRCh38 (GENCODE v44), Cell Ranger ``multi`` output.
+
+
+============================================================================== ========================================================================================================
+Upstream assumption                                                            Ultima UG100 / 10x 5' universal R2 BAM
+============================================================================== ========================================================================================================
+Reads arrive mated; R1 is the fragment 5' end                                  single-end records, no mate
+cDNA read is sense to the gene                                                 antisense to the gene (Converted by Ultima virtual pair-end reads)
+13 bp TSO is inside the read, as a 14-16 bp soft clip encoding the unencoded G TSO, barcode reads, and 5' Gs are trimmed
+Cap site is the read 5' terminus                                               cap site is the read **3'** terminus (median +3 bp from an annotated TSS)
+============================================================================== ========================================================================================================
+
+All changes are confined to ``CamoTSS/utils/get_counts.py``
+
+
+
+Limitations
+=============
+
+**Clusters are no longer false-positive filtered by a trained model.** The
+logistic regression in upstream CamoTSS scores four features: ``UMI_count``,
+``SD``, ``summit_UMI_count`` and ``unencoded_G_percent``. The last one is
+derived from the TSO soft clip, which does not exist in Ultima virtual split reads.
+
+Consequences for  analysis:
+
+- What this fork produces is unsupervised clustering of UMI-deduplicated read
+  3' termini, not model-scored cap sites. There is no learned component left in
+  the ``TC`` pipeline.
+- For UMIs have their 3' terminus more than 100 bp from any annotated
+  TSS, those are either genuinely unannotated starts or non-cap 5' ends
+  (internal priming, degradation), and this build cannot tell them apart.
 
 
 Installation
 ============
 
-You can install from this GitHub repository for latest (often development) 
-version by following command line
+.. code-block:: bash
+
+   pip install -U git+https://github.com/yifan-chen-bcm/CamoTSS-Ultima
+
+.. warning::
+
+   Do not install this alongside upstream ``CamoTSS`` in the same environment.
+   The distribution names differ (``CamoTSS-Ultima`` vs ``CamoTSS``) but both
+   provide the same importable ``CamoTSS`` package and the same ``CamoTSS``
+   console script, so they will silently overwrite each other. Uninstall one
+   before installing the other.
+
+Verify which build you have:
 
 .. code-block:: bash
 
-  pip install -U git+https://github.com/StatBiomed/CamoTSS
-
-In either case, add ``--user`` if you don't have the write permission for your 
-Python environment.
+   CamoTSS --version
+   # CamoTSS (CamoTSS-Ultima) 0.1.7+ultima.1 -- fork of CamoTSS 0.1.7
 
 
-Quick start
-===========
 
-Download test file
-===================
 
-You can download test file from figshare_.
-
-.. _figshare: https://figshare.com/projects/CamoTSS/184603
-
-Here, you can download some large file include genome.fa, possorted_genome_bam_filtered.bam.
-  
-Run CamoTSS 
-=============
-
-Here are three modes in CamoTSS : **TC+CTSS** , **TC** and **CTSS**.
-
-When you run **TC+CTSS** mode, you will get TC result and then get the CTSS result based on the TC.
-
-When you run **TC** mode, you will only get the TC result.
-
-The **TC+CTSS** and **TC** mode have the same required files.
-
-The --outdir is the only required parameter for **CTSS** mode. But the outdir should include output of TC.  
-
-If you want to run **CTSS** mode, you must based on the output of TC.
-
-You can run CamoTSS **TC+CTSS** mode by using test file according to the following code.
-
-**Note**
-You should use the same reference gtf file and reference fasta file as that you used during alignment. In other words, if you run alignment by using cellranger, then the gtf file and fasta file should located in the refdata-gex-GRCh38-2020-A/fasta/genome.fa and refdata-gex-GRCh38-2020-A/genes/genes.gtf.  
-
-For the remaining modes, you can check this document_.
-
-.. _document: https://camotss.readthedocs.io/en/latest/run_CamoTSS.html
+Usage
+=====
 
 .. code-block:: bash
 
-   #!/bin/bash 
-   gtfFile=$download/Homo_sapiens.GRCh38.105.chr_test.gtf
-   fastaFile=$download/genome.fa
-   bamFile=$download/possorted_genome_bam_filtered.bam
-   cellbarcodeFile=$download/cellbarcode_to_CamoTSS
-        
-   CamoTSS --gtf $gtfFile --refFasta $fastaFile --bam $bamFile -c $cellbarcodeFile -o CamoTSS_out --mode TC+CTSS
-
-
-Alternative TSS or CTSS detecting
-=================================
-
-To identify alternative TSS usage or alternative CTSS usage, Brie2 (Huang & Sanguinetti, 2021) is recommend to be used. 
-
-Here, we provide an example exploiting BRIE2 to detect alterntive TSS/CTSS usage. 
-
-You can check it in our manual_.
-
-.. _manual: https://camotss.readthedocs.io/en/latest/runBRIE.html  
-
-
-Detailed Manual
-================
-
-The full manual is here_, including:
-
-`Preprocess`_
-
-`Run CamoTSS`_
-
-`Detect alternative TSS/CTSS`_
-
-.. _here: https://camotss.readthedocs.io/en/latest/index.html
-
-.. _Preprocess: https://camotss.readthedocs.io/en/latest/preprocess.html
-
-.. _Run CamoTSS: https://camotss.readthedocs.io/en/latest/run_CamoTSS.html
-
-.. _Detect alternative TSS/CTSS: https://camotss.readthedocs.io/en/latest/runBRIE.html
+   CamoTSS --mode TC \
+     --gtf   gencode.v44.gtf.gz \
+     --bam   merged.tagged.bam \
+     -c      barcodes_camotss.tsv \
+     -r      GRCh38.primary_assembly.genome.fa \
+     -o      camotss_out \
+     --nproc 12 --minCount 50 --maxReadCount 10000
 
 
 
-Reference
-===========
+Output
+======
 
-Hou, R., Hon, CC. & Huang, Y. CamoTSS: analysis of alternative transcription start sites for cellular phenotypes and regulatory patterns from 5' scRNA-seq data. Nat Commun 14, 7240 (2023). https://doi.org/10.1038/s41467-023-42636-1
+============================== =========================================================
+File                           Contents
+============================== =========================================================
+``count/fourFeature.csv``      every candidate cluster with its four features. **This is
+                               where your filtering now happens**
+``count/afterfiltered.csv``    clusters surviving the (bypassed) filter -- currently
+                               identical to the above
+``count/scTSS_count_all.h5ad`` cell x TSS-cluster counts, all clusters
+``count/scTSS_count_two.h5ad`` restricted to genes with >=2 clusters separated by
+                               ``--clusterDistance``; this is the input for differential
+                               TSS usage
+``count/fetch_reads.pkl``      per-gene ``(position, CB, cigar)`` tuples after UMI collapse
+============================== =========================================================
+
+Clusters named ``<gene_id>_newTSS`` did not match any annotated transcript TSS.
+See *Known limitations* before counting them.
 
 
 
+Citation
+========
 
+Please cite the original CamoTSS paper. This fork adds no new method.
 
-
-
-
-
-
-
-
+  Hou, R., Hon, C.C. & Huang, Y. CamoTSS: analysis of alternative transcription
+  start sites for cellular phenotypes and regulatory patterns from 5' scRNA-seq
+  data. *Nat Commun* **14**, 7240 (2023).
+  https://doi.org/10.1038/s41467-023-42636-1
