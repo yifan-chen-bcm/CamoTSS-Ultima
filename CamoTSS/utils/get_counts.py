@@ -54,6 +54,10 @@ class get_TSS_count():
 
         self.minCount=minCount
         self.cellBarcode=pd.read_csv(cellBarcodePath,delimiter='\t')['cell_id'].values
+
+        ### Updated to improve processing speed
+        self.cellBarcodeSet=set(self.cellBarcode.tolist())
+
         self.nproc=nproc
         self.maxReadCount=maxReadCount
         self.clusterDistance=clusterDistance
@@ -71,18 +75,21 @@ class get_TSS_count():
         samFile, _chrom = check_pysam_chrom(bamfilePath, str(mergedf.loc[geneid]['Chromosome']))
         
         reads = fetch_reads(samFile, _chrom,  mergedf.loc[geneid]['Start'] , mergedf.loc[geneid]['End'],  trimLen_max=100)
-        reads1_umi = reads["reads1"]
-        print(reads1_umi)
+
+        ### Ultima R2 reads are single ends so all reads will be unmatched and placed in "reads1u" (toolbox.py part 3)
+
+        reads1_umi = reads["reads1"] + reads["reads1u"]
+
 
 
 
         #select according to GX tag and CB (filter according to user owned cell)
         reads1_umi=[r for r in reads1_umi if r.get_tag('GX')==geneid]
-        print("first")
-        print(reads1_umi)
-        reads1_umi=[r for r in reads1_umi if r.get_tag('CB') in self.cellBarcode]
-        print("second")
-        print(reads1_umi)
+
+
+        reads1_umi=[r for r in reads1_umi if r.get_tag('CB') in self.cellBarcodeSet]
+
+
 
 
         #filter strand invasion
@@ -96,34 +103,54 @@ class get_TSS_count():
         reads_info=[]
         #filter according to the cateria of SCAFE
         if mergedf.loc[geneid]['Strand']=='+':
-            reads1_umi=[r for r in reads1_umi if r.is_reverse==False]
+
+            ### Ultima R2 are antisense
+            reads1_umi = [r for r in reads1_umi if r.is_reverse == True]
+
+
+            ### TSO/CIGAR filters commented out
+            #reads1_umi=[r for r in reads1_umi if r.is_reverse==False]
             
-            reads1_umi=[r for r in reads1_umi if editdistance.eval(r.query_sequence[9:14],'ATGGG')<=4]
-            reads1_umi=[r for r in reads1_umi if len(r.cigartuples)>=2]
+            #reads1_umi=[r for r in reads1_umi if editdistance.eval(r.query_sequence[9:14],'ATGGG')<=4]
+            #reads1_umi=[r for r in reads1_umi if len(r.cigartuples)>=2]
             #print([i.cigarstring for i in reads1_umi])
-            reads1_umi=[r for r in reads1_umi if (r.cigartuples[0][0]==4)&(r.cigartuples[0][1]>6)&(r.cigartuples[0][1]<20)&(r.cigartuples[1][0]==0)&(r.cigartuples[1][1]>5)]
+            #reads1_umi=[r for r in reads1_umi if (r.cigartuples[0][0]==4)&(r.cigartuples[0][1]>6)&(r.cigartuples[0][1]<20)&(r.cigartuples[1][0]==0)&(r.cigartuples[1][1]>5)]
             #print(reads1_umi)
+
+
             readsdf=pd.DataFrame({'name':[r.query_name for r in reads1_umi],'TSS':[r.reference_start for r in reads1_umi],'UMI':[r.get_tag('UB') for r in reads1_umi],'CB':[r.get_tag('CB') for r in reads1_umi]})
             readsdf.sort_values(['UMI','CB','TSS'],inplace=True)
             groups=readsdf.groupby(['UMI','CB']).head(1)
-            reads1_umi=[r for r in reads1_umi if r.query_name in groups['name'].tolist()]
+            ### Update to improve processing speed
+            keep = set(groups['name'])
+            reads1_umi = [r for r in reads1_umi if r.query_name in keep]
+
             reads_info=[(r.reference_start,r.get_tag('CB'),r.cigarstring) for r in reads1_umi]
 
         
         elif mergedf.loc[geneid]['Strand']=='-':
-            reads1_umi=[r for r in reads1_umi if r.is_reverse==True]
-            
-            reads1_umi=[r for r in reads1_umi if editdistance.eval(r.query_sequence[-13:-8],'CCCAT')<=4]
-            reads1_umi=[r for r in reads1_umi if len(r.cigartuples)>=2]
+
+            ### Ultima R2 are antisense
+            reads1_umi=[r for r in reads1_umi if r.is_reverse==False]
+
+            ### TSO/CIGAR filters commented out
+            #reads1_umi=[r for r in reads1_umi if editdistance.eval(r.query_sequence[-13:-8],'CCCAT')<=4]
+            #reads1_umi=[r for r in reads1_umi if len(r.cigartuples)>=2]
             #print([i.cigarstring for i in reads1_umi])
-            reads1_umi=[r for r in reads1_umi if (r.cigartuples[0][0]==0)&(r.cigartuples[0][1]>5)&(r.cigartuples[1][0]==4)&(r.cigartuples[1][1]>6)&(r.cigartuples[1][1]<20)]
+            #reads1_umi=[r for r in reads1_umi if (r.cigartuples[0][0]==0)&(r.cigartuples[0][1]>5)&(r.cigartuples[1][0]==4)&(r.cigartuples[1][1]>6)&(r.cigartuples[1][1]<20)]
             #print(reads1_umi)
 
-            readsdf=pd.DataFrame({'name':[r.query_name for r in reads1_umi],'TSS':[r.reference_end for r in reads1_umi],'UMI':[r.get_tag('UB') for r in reads1_umi],'CB':[r.get_tag('CB') for r in reads1_umi]})
+            ### Change the reference end position, Ultima R2 the highest coordinate are the 3' end
+            readsdf=pd.DataFrame({'name':[r.query_name for r in reads1_umi],'TSS':[r.reference_end-1 for r in reads1_umi],'UMI':[r.get_tag('UB') for r in reads1_umi],'CB':[r.get_tag('CB') for r in reads1_umi]})
             readsdf.sort_values(['UMI','CB','TSS'],inplace=True)
             groups=readsdf.groupby(['UMI','CB']).tail(1)
-            reads1_umi=[r for r in reads1_umi if r.query_name in groups['name'].tolist()]
-            reads_info=[(r.reference_end,r.get_tag('CB'),r.cigarstring) for r in reads1_umi]
+
+            ### Update to improve processing speed
+            keep = set(groups['name'])
+            reads1_umi = [r for r in reads1_umi if r.query_name in keep]
+
+            ### Change the reference end position, Ultima R2 the highest coordinate are the 3' end
+            reads_info=[(r.reference_end-1,r.get_tag('CB'),r.cigarstring) for r in reads1_umi]
 
         #print(reads_info)
 
@@ -146,21 +173,18 @@ class get_TSS_count():
 
         getreadsFile=pysam.AlignmentFile(bamfilePath,'rb')
 
-        geneidls=[]
-        for read in getreadsFile.fetch(until_eof = True):
-            geneid=read.get_tag('GX')
-            geneidls.append(geneid)
-        geneiddf=pd.DataFrame(geneidls,columns=['gene_id'])
-        print("hi , this is the gene id df ")
-    
-        geneid_uniqdf=geneiddf.drop_duplicates('gene_id')
-        print(geneiddf)
+        ### Update to increase processing speed
+        geneidset = set()
+        for read in getreadsFile.fetch(until_eof=True):
+            if read.has_tag('GX'):
+                geneidset.add(read.get_tag('GX'))
+        geneid_uniqdf = pd.DataFrame(sorted(geneidset), columns=['gene_id'])
+
         print("hi, this is the gene refdf")
         print(self.generefdf)
 
-
-        mergedf=geneid_uniqdf.merge(self.generefdf,on='gene_id')
-        mergedf.set_index('gene_id',inplace=True)
+        mergedf = geneid_uniqdf.merge(self.generefdf, on='gene_id')
+        mergedf.set_index('gene_id', inplace=True)
         print("hi, this is the merge df")
         print(mergedf)
         # print(self.generefdf)
@@ -305,7 +329,11 @@ class get_TSS_count():
                 
 
                 count=len(altTSSdict[i][j][0])
-                std=statistics.stdev(altTSSdict[i][j][0].flatten())
+
+                ### Numpy 2 update
+                _pos = altTSSdict[i][j][0].flatten()
+                std = float(np.std(_pos, ddof=1)) if len(_pos) > 1 else 0.0
+
                 summit_count=np.max(np.unique(altTSSdict[i][j][0].flatten(),return_counts=True)[1])
                 unencoded_G_percent=sum([('14S' in ele)or('15S' in ele)or('16S' in ele) for ele in altTSSdict[i][j][2].flatten()])/count
                 
@@ -340,9 +368,14 @@ class get_TSS_count():
 
         # print(Path(os.path.dirname(os.path.abspath(__file__))).parents[1])
 
-        pathstr=str(Path(os.path.dirname(os.path.abspath(__file__))).parents[0])+'/model/logistic_4feature_model.sav'
-        loaded_model = pickle.load(open(pathstr, 'rb'))
-        test_Y=loaded_model.predict(test_X.values)
+        ## Ultima R2 has very low level of unencoded-G soft clip for this pre-train model. Bypass the logistic filter
+        USE_LOGISTIC_FILTER=False
+        if USE_LOGISTIC_FILTER:
+            pathstr=str(Path(os.path.dirname(os.path.abspath(__file__))).parents[0])+'/model/logistic_4feature_model.sav'
+            loaded_model = pickle.load(open(pathstr, 'rb'))
+            test_Y=loaded_model.predict(test_X.values)
+        else:
+            test_Y=np.ones(len(test_X),dtype=int)
 
         #do filtering, the result of this step should be output as final h5ad file display at single cell level. 
         afterfiltereddf=fourfeaturedf[test_Y==1]

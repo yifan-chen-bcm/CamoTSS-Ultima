@@ -1,5 +1,5 @@
 from optparse import OptionParser,OptionGroup
-from ..version import __version__
+from ..version import __version__, __upstream_version__, __fork__, __fork_url__
 import sys
 from ..utils.build_ref import get_TSSref,get_generef,get_filter_TSS
 from ..utils.get_counts import get_TSS_count
@@ -14,7 +14,8 @@ START_TIME = time.time()
 
 
 def main():
-    parser = OptionParser()
+    parser = OptionParser(version="%%prog (%s) %s -- fork of CamoTSS %s\n%s" % (
+        __fork__, __version__, __upstream_version__, __fork_url__))
     parser.add_option('--gtf','-g',dest='gtf_file',default=None,help='The annotation gtf file for your analysing species.')
     parser.add_option('--cellbarcodeFile','-c',dest='cdrFile',default=None,help='The file include cell barcode which users want to keep in the downstream analysis.')
     parser.add_option('--bam','-b',dest='bam_file',default=None,help='The bam file of aligned from Cellranger or other single cell aligned software.')
@@ -60,13 +61,17 @@ def main():
     parser.add_option_group(group0)
     parser.add_option_group(group1)
 
+    print("[%s] %s (fork of CamoTSS %s) -- %s" % (
+        __fork__, __version__, __upstream_version__, __fork_url__), flush=True)
+    print("[%s] Ultima R2-only mode: TSO and soft-clip tests disabled, "
+          "logistic FP filter bypassed" % __fork__, flush=True)
 
     (options, args) = parser.parse_args()
 
     
     #this means that if users do not input any argument, then direct produce help. then end.
     if len(sys.argv[1:]) == 0:
-        print('Welcome to CamoTSS v%s!\n'%(__version__))
+        print('Welcome to CamoTSS-Ultima Fork v%s!\n'%(__version__))
         print("use -h or --help for help on argument.")
         sys.exit(1)
 
@@ -165,7 +170,7 @@ def main():
     else:
         print('Do not have this mode. Please check your spell!')
         run_time = time.time() - START_TIME
-        print("[CamoTSS] All done: %d min %.1f sec" %(int(run_time / 60), 
-                                                  run_time % 60))
+        print("[%s] all done in %d min %.1f sec (%s)" % (
+            __fork__, int(run_time / 60), run_time % 60, __version__), flush=True)
 
 

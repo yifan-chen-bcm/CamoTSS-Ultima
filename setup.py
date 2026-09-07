@@ -24,8 +24,8 @@ reqs = ['numpy>=1.9.0', 'scipy>=1.4.0', 'matplotlib','anndata>=0.6','pyranges>=0
 'scanpy>=1.5','pysam>=0.15.2','pandas>=0.23.0','scikit-learn>=0.23','editdistance>=0.3.1']
 
 setup(
-    name='CamoTSS',
-
+    name='CamoTSS-Ultima',
+    url='https://github.com/yifan-chen-bcm/CamoTSS-Ultima',
     # Versions should comply with PEP440.  For a discussion on single-sourcing
     # the version across setup.py and the project code, see
     # https://packaging.python.org/en/latest/single_source_version.html
@@ -35,7 +35,7 @@ setup(
     long_description=long_description,
 
     # The project's main homepage.
-    url='https://github.com/StatBiomed/CamoTSS',
+
 
     # Author details
     author=['Ruiyan Hou'],

@@ -9,6 +9,12 @@ CamoTSS for alternative TSS analysis in single cells
 .. image:: https://zenodo.org/badge/497821671.svg
       :target: https://zenodo.org/badge/latestdoi/497821671
 
+Fork
+============
+Update the package so it works with Ultima R2 reads
+Most of the changes are made in get_counts.py
+Yifan Chen 9-6-2026
+yifan.chen@bcm.edu
 
 Note
 ============
