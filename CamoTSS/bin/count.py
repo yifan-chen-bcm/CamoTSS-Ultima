@@ -166,11 +166,12 @@ def main():
         getctsscount=get_CTSS_count(out_dir,minCTSSCount,minFC,n_proc,windowSize)   # should create CTSS 
         ctssadata=getctsscount.produce_CTSS_adata()
 
-
     else:
         print('Do not have this mode. Please check your spell!')
-        run_time = time.time() - START_TIME
-        print("[%s] all done in %d min %.1f sec (%s)" % (
-            __fork__, int(run_time / 60), run_time % 60, __version__), flush=True)
+        sys.exit(1)
+
+    run_time = time.time() - START_TIME
+    print("[%s] all done in %d min %.1f sec (%s)" % (
+        __fork__, int(run_time / 60), run_time % 60, __version__), flush=True)
 
 
