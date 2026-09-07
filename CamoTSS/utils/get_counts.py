@@ -82,6 +82,7 @@ class get_TSS_count():
         reads1_umi = [r for r in reads1_umi if r.get_tag('GX') == geneid]
 
         reads1_umi = [r for r in reads1_umi if r.get_tag('CB') in self.cellBarcodeSet]
+        reads1_umi = [r for r in reads1_umi if r.has_tag('UB')]
 
         # filter strand invasion
         fastqFile = get_fastq_file(fastqFilePath)
@@ -160,9 +161,9 @@ class get_TSS_count():
         bamfilePath = self.bamfilePath
         fastqFilePath = self.fastqFilePath
 
-        getreadsFile = pysam.AlignmentFile(bamfilePath, 'rb')
+        getreadsFile = pysam.AlignmentFile(bamfilePath, 'rb', threads=4)
 
-        _log("phase 1/6  scanning whole BAM for GX tags (single pass, single-threaded)")
+        _log("phase 1/6  scanning whole BAM for GX tags")
         ### Update to increase processing speed
         geneidset = set()
         nrec = 0;
