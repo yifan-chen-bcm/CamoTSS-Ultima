@@ -33,8 +33,16 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.filterwarnings("ignore", category=Warning)
 
 
+### Per-process cache. _getreads called this once per gene, so a full run opened
+### and re-parsed the .fai ~27k times. Module globals are per worker process and
+### are never pickled, so one handle per worker for its whole lifetime.
+_FASTA_CACHE = {}
+
 def get_fastq_file(fastqFilePath):
-    fastqFile = pysam.FastaFile(fastqFilePath)
+    fastqFile = _FASTA_CACHE.get(fastqFilePath)
+    if fastqFile is None:
+        fastqFile = pysam.FastaFile(fastqFilePath)
+        _FASTA_CACHE[fastqFilePath] = fastqFile
     return fastqFile
 
 
@@ -66,6 +74,10 @@ class get_TSS_count():
         self.windowSize = windowSize
         self.minCTSSCount = minCTSSCount
         self.minFC = minFC
+
+    def _getreads_one(self, geneid):
+        ### single-argument entry point so pool.imap can batch genes into chunks
+        return self._getreads(self.bamfilePath, self.fastqFilePath, geneid, self._mergedf)
 
     def _getreads(self, bamfilePath, fastqFilePath, geneid, mergedf):
         # print(self.generefdf)
@@ -183,22 +195,25 @@ class get_TSS_count():
         _log("phase 1/6  %d of those genes matched the gene reference" % (len(mergedf),))
 
         readinfodict = {}
-        results = []
+        ### One task message per CHUNK instead of per gene. multiprocessing pickles
+        ### `func` once per chunk (see pool._get_tasks), and a bound method drags the
+        ### whole object with it -- generefdf + tssrefdf + cellBarcodeSet, ~25 MB.
+        ### Per-gene apply_async meant 27k x 25 MB of parent-side pickling (~60 min on
+        ### one core) while the workers sat idle. mergedf goes on self so it is not
+        ### repeated inside every task tuple either.
+        self._mergedf = mergedf
+        genes = list(mergedf.index)
+        ngene = len(genes)
+        cs = max(1, -(-ngene // (4 * self.nproc)))     # same formula map_async uses
 
-        # get reads because pysam object cannot be used for multiprocessing so inputting bam file path
-        for i in mergedf.index:
-            results.append(pool.apply_async(self._getreads, (bamfilePath, fastqFilePath, i, mergedf)))
-        pool.close()
-        _log("phase 2/6  fetching reads for %d genes on %d workers" % (len(results), self.nproc))
-
-        ### res.get() blocks on each task in submission order, so collecting here
-        ### instead of after pool.join() gives incremental progress. Same values,
-        ### same order as the original list comprehension.
-        ngene = len(results)
-        for k, (geneid, res) in enumerate(zip(mergedf.index, results), 1):
-            readinfodict[geneid] = res.get()
+        _log("phase 2/6  fetching reads for %d genes on %d workers (chunksize %d)"
+             % (ngene, self.nproc, cs))
+        for k, (geneid, res) in enumerate(zip(genes,
+                pool.imap(self._getreads_one, genes, chunksize=cs)), 1):
+            readinfodict[geneid] = res
             if k % 500 == 0 or k == ngene:
                 _log("phase 2/6  %d/%d genes (%.1f%%)" % (k, ngene, 100.0 * k / ngene))
+        pool.close()
         pool.join()
 
         # delete gene whose reads length is larger than maxReadCount
@@ -287,9 +302,10 @@ class get_TSS_count():
         _log("phase 3/6  hierarchical clustering of 5' ends, %d genes on %d workers"
              % (len(dictcontentls), self.nproc))
         nclu = len(dictcontentls)
+        cs = max(1, -(-nclu // (4 * self.nproc)))     # same formula map_async uses
         with multiprocessing.Pool(self.nproc) as pool:
             altTSSls = []
-            for k, r in enumerate(pool.imap(self._do_clustering, dictcontentls, chunksize=16), 1):
+            for k, r in enumerate(pool.imap(self._do_clustering, dictcontentls, chunksize=cs), 1):
                 altTSSls.append(r)
                 if k % 1000 == 0 or k == nclu:
                     _log("phase 3/6  %d/%d genes (%.1f%%)" % (k, nclu, 100.0 * k / nclu))
@@ -712,4 +728,3 @@ class get_TSS_count():
         print('produce CTSS h5ad Time elapsed', int(time.time() - ctime), 'seconds.')
 
         return twoctssadata
-
