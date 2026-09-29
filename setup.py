@@ -38,8 +38,8 @@ setup(
     url='https://github.com/yifan-chen-bcm/CamoTSS-Ultima',
 
     # Author details
-    author=['Ruiyan Hou'],
-    author_email='ruiyan@connect.hku.hk',
+    author=['Ruiyan Hou; Yifan Chen'],
+    author_email='ruiyan@connect.hku.hk; yifan.chen@bcm.edu',
 
     # Choose your license
     license='Apache-2.0',
@@ -58,10 +58,11 @@ setup(
     package_data={'CamoTSS': ['model/*.sav']},
 
     entry_points={
-          'console_scripts': [
+        'console_scripts': [
             'CamoTSS = CamoTSS.bin.count:main',
-            ],
-          }, 
+            'CamoTSS-filter = CamoTSS.filter_quantify_cluster:main',
+        ],
+    },
 
     # List run-time dependencies here.  These will be installed by pip when
     # your project is installed. For an analysis of "install_requires" vs pip's

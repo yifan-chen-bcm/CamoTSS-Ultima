@@ -42,7 +42,9 @@ cDNA read is sense to the gene                                                 a
 Cap site is the read 5' terminus                                               cap site is the read **3'** terminus (median +3 bp from an annotated TSS)
 ============================================================================== ========================================================================================================
 
-All changes are confined to ``CamoTSS/utils/get_counts.py``
+All changes to the upstream pipeline are confined to ``CamoTSS/utils/get_counts.py``.
+This fork also adds one downstream tool, ``CamoTSS/filter_quantify_cluster.py``
+(see `Filtering and exact re-counting`_).
 
 
 
@@ -103,7 +105,6 @@ Usage
      --nproc 12 --minCount 50 --maxReadCount 10000
 
 
-
 Output
 ======
 
@@ -122,14 +123,128 @@ File                           Contents
 ============================== =========================================================
 
 Clusters named ``<gene_id>_newTSS`` did not match any annotated transcript TSS.
-See *Known limitations* before counting them.
+See *Limitations* before counting them. ``CamoTSS-filter`` drops them unless their
+summit is within ``--max-dist`` of an annotated TSS.
 
+Filtering and exact re-counting
+===============================
+
+``CamoTSS-filter`` (``CamoTSS/filter_quantify_cluster.py``) is run **after**
+``CamoTSS --mode TC``. It replaces the bypassed logistic filter with an
+annotation-based one, then re-counts UMIs for the surviving clusters directly
+from the BAM.
+
+Why it exists
+-------------
+
+- **Filter only highly confident TSS** The script filters and only retain highly confident TSS withtin ``--max-dist`` (default 50bp) of an annotated TSS site.
+- **Saturated counts.** CamoTSS stops fetching at ``--maxReadCount`` reads per
+  gene (default 10000), so ``scTSS_count_*.h5ad`` under-counts highly expressed
+  genes. This tool reads the BAM itself and has no read ceiling.
+
+What it does
+------------
+
+==========  ============================================  ==========================================
+Step        Input                                         Result
+==========  ============================================  ==========================================
+0 restrict  ``count/scTSS_count_two.h5ad`` (optional)     only the multi-TSS clusters CamoTSS kept
+1 filter    ``count/fourFeature.csv`` +                   clusters whose summit is within
+            ``ref_file/ref_TSS.tsv``                      ``--max-dist`` bp of an annotated TSS of
+                                                          the same gene, in genes that keep at
+                                                          least ``--min-tss`` clusters
+2 count     filtered clusters + BAM + GTF + cell list     exact cell x cluster UMI matrix
+==========  ============================================  ==========================================
+
+Step 2 only runs when ``--bam`` is given. Omit ``--bam`` to stop after filtering.
+
+For counting, a read is kept if it has MAPQ >= ``--mapq``, is antisense to the
+gene, has a ``GX`` tag equal to the gene, and has ``CB`` and ``UB`` tags with a
+``CB`` in ``--meta``. Reads are collapsed to one molecule per ``(CB, UB)`` at its
+most 5' position (the read's 3' terminus). Each molecule is assigned to the
+cluster interval that contains that position.
+Usage
+-----
+
+Filter only:
+
+.. code-block:: bash
+
+   CamoTSS-filter \
+     --two-h5ad    camotss_out/count/scTSS_count_two.h5ad \
+     --fourfeature camotss_out/count/fourFeature.csv \
+     --ref-tss     camotss_out/ref_file/ref_TSS.tsv \
+     --outdir      camotss_out/quantify_two
+
+Filter and re-count:
+
+.. code-block:: bash
+
+   CamoTSS-filter \
+     --two-h5ad    camotss_out/count/scTSS_count_two.h5ad \
+     --fourfeature camotss_out/count/fourFeature.csv \
+     --ref-tss     camotss_out/ref_file/ref_TSS.tsv \
+     --bam         merged.tagged.bam \
+     --gtf         gencode.v44.gtf.gz \
+     --meta        barcodes_camotss.tsv \
+     --outdir      camotss_out/quantify_two \
+     --nproc 12
+
+
+Arguments
+---------
+
+================= ========== ================================================================
+Argument          Default    Description
+================= ========== ================================================================
+``--fourfeature`` required   CamoTSS ``count/fourFeature.csv``
+``--ref-tss``     required   CamoTSS ``ref_file/ref_TSS.tsv``
+``--outdir``      required   output directory
+``--two-h5ad``    none       CamoTSS ``count/scTSS_count_two.h5ad``. Restricts the analysis to
+                             the clusters CamoTSS kept as multi-TSS before any other filter.
+                             Omit it to start from every cluster in ``fourFeature.csv``
+``--max-dist``    50         maximum distance (bp) from a cluster summit to an annotated TSS
+                             of the same gene
+``--min-tss``     2          minimum number of surviving clusters a gene must keep
+``--bam``         none       BAM to re-count from. Passing it turns on step 2
+``--gtf``         none       GTF (plain or gzipped) matching the BAM's ``GX`` tags. Required
+                             with ``--bam``; the gene strand is taken from here
+``--meta``        none       pass-filter cells. Required with ``--bam``. Accepts the CamoTSS
+                             ``-c`` barcode file (``cell_id`` column), a CSV with ``cell_id``
+                             or ``cell_barcode``, or a headerless one-barcode-per-line list.
+                             Extra columns are copied to ``.obs``
+``--nproc``       8          worker processes for counting
+``--mapq``        255        minimum MAPQ (STAR / Cell Ranger give 255 to unique alignments)
+================= ========== ================================================================
+
+Output
+------
+
+========================================== =======================================================
+File                                       Contents
+========================================== =======================================================
+``<outdir>/confident_TSS.csv``             filtered clusters: the ``fourFeature.csv`` columns plus
+                                           ``cluster_start``, ``cluster_end``, ``known_TSS``,
+                                           ``dist_signed`` (summit - known TSS), ``dist_abs`` and
+                                           ``n_cluster``
+``<outdir>/filtered_clusters_counts.h5ad`` written with ``--bam`` only. ``X``: cells x clusters
+                                           UMI counts (sparse int32). ``obs``: the ``--meta``
+                                           table, in its row order. ``var``: the cluster table,
+                                           indexed by ``cluster_id``, plus ``chrom``, ``strand``,
+                                           ``gene_name``, ``umi_total`` and ``cells_detected``.
+                                           ``uns['params']``: the run settings
+========================================== =======================================================
+
+Clusters whose gene is missing from the GTF are dropped before counting, and the
+``--min-tss`` rule is applied again afterwards. As a result, the h5ad can have
+fewer clusters than ``confident_TSS.csv``. Always join the two on ``cluster_id``
+/ ``clusterID``, never on row position.
 
 
 Citation
 ========
 
-Please cite the original CamoTSS paper. This fork adds no new method.
+Please cite the original CamoTSS paper.
 
   Hou, R., Hon, C.C. & Huang, Y. CamoTSS: analysis of alternative transcription
   start sites for cellular phenotypes and regulatory patterns from 5' scRNA-seq
